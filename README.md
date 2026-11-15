@@ -2,7 +2,7 @@
 
 **The heavy data for [Genesis](https://github.com/Firegod1991/genesis), rebuilt every month and published as release files.**
 
-Genesis is the catalog and the tools. This repository is the data factory beside it: once a month a workflow reads all of OpenStreetMap, continent by continent, and publishes the result so a new Genesis box has a map of the world and knows where the water, care, fuel and power are within minutes of its first run.
+Genesis is the catalog and the tools. This repository is the data factory beside it: once a month a workflow reads the whole OpenStreetMap planet file and publishes the result so a new Genesis box has a map of the world and knows where the water, care, fuel and power are within minutes of its first run.
 
 Get the newest build from [Releases](https://github.com/Firegod1991/genesis-vault/releases/latest), or let Genesis do it:
 
@@ -54,16 +54,24 @@ WHERE r.min_lon >= 7.3 AND r.max_lon <= 7.5 AND r.min_lat >= 43.7 AND r.max_lat 
 
 ## How it is built
 
-[build.yml](.github/workflows/build.yml) runs on the 27th of each month, a few days before the Genesis catalog refresh on the 1st:
+[build.yml](.github/workflows/build.yml) runs on the 27th of each month, a few days before the Genesis catalog refresh on the 1st. The work itself is in [scripts](scripts):
 
-1. One job per continent downloads the [Geofabrik](https://download.geofabrik.de) extract, checks its MD5, and runs `genesis poi build`.
-2. A final job merges the continents, exports the tables, cuts the world overview from the newest [Protomaps](https://protomaps.com) planet build, gathers the public domain scripture and publishes a release named for the month.
+1. **Survival layers.** One job downloads the newest weekly [OpenStreetMap planet file](https://planet.openstreetmap.org) from the OpenStreetMap bucket on Amazon S3, checks its MD5, keeps only the survival layers with osmium and runs `genesis poi build`.
+2. **World overview map.** A second job cuts zoom 0 to 6 from the newest [Protomaps](https://protomaps.com) planet build.
+3. **Scripture.** A third job gathers every public domain translation in the Genesis catalog.
+4. **Release.** The last job publishes all of it under a tag named for the month, then checks that GitHub holds every file whole.
 
-If a continent fails to build, the release is marked as a preview and says which part of the world is missing. The last complete release stays the one marked latest.
+The planet file is used on purpose. It is one download a month from storage that OpenStreetMap provides for bulk use. Regional mirrors such as Geofabrik ask people not to rebuild the planet from their extracts.
 
-Every run, good or bad, writes what happened to [status.json](status.json): which continents built, how many places each holds, and which step stopped a build that failed. A published build also rewrites [LATEST.md](LATEST.md) with its totals and checksums.
+If the map or the scripture bundle fails, the layers are still published and the release is marked as a preview that says what is missing. The last complete release stays the one marked latest.
 
-Nothing here is edited by hand. To change what the layers contain, change `poi_categories.json` in Genesis.
+Every run, good or bad, writes what happened to [status.json](status.json): which planet file was used, how long each stage took, how many places were found, and the end of the log of any step that failed. A published build also rewrites [LATEST.md](LATEST.md) with its totals and checksums.
+
+### Changing the build
+
+* To change what the layers contain, change `poi_categories.json` in Genesis. Nothing here is edited by hand.
+* To try a change to the workflow quickly, set `REHEARSAL_URL` in build.yml to a small extract. The whole workflow then runs in minutes on that extract, publishes under the tag `rehearsal`, checks the files and removes that release again.
+* To fix a later step without rebuilding the layers, start the workflow by hand and give it the id of the run whose layers to reuse.
 
 ## Read this before you rely on it
 

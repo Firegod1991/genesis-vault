@@ -61,6 +61,8 @@ WHERE r.min_lon >= 7.3 AND r.max_lon <= 7.5 AND r.min_lat >= 43.7 AND r.max_lat 
 
 If a continent fails to build, the release is marked as a preview and says which part of the world is missing. The last complete release stays the one marked latest.
 
+Every run, good or bad, writes what happened to [status.json](status.json): which continents built, how many places each holds, and which step stopped a build that failed. A published build also rewrites [LATEST.md](LATEST.md) with its totals and checksums.
+
 Nothing here is edited by hand. To change what the layers contain, change `poi_categories.json` in Genesis.
 
 ## Read this before you rely on it

@@ -1,23 +1,23 @@
 {
- "finished": "2026-11-15 07:54 UTC",
- "run": "https://github.com/Firegod1991/genesis-vault/actions/runs/43691828397",
- "rehearsal": true,
- "published": false,
+ "finished": "2026-11-15 09:21 UTC",
+ "run": "https://github.com/Firegod1991/genesis-vault/actions/runs/43692153288",
+ "rehearsal": false,
+ "published": true,
  "release": {
-  "tag": "rehearsal",
+  "tag": "2026.11",
   "whole": true,
   "assets": {
    "SHA256SUMS": 908,
-   "comms.csv.gz": 8071,
-   "fuel.csv.gz": 22489,
-   "medical.csv.gz": 22201,
-   "power.csv.gz": 1024547,
-   "scripture_public_domain.zip": 9701518,
-   "shelter.csv.gz": 35382,
-   "supply.csv.gz": 13486,
-   "survival.sqlite.gz": 3385180,
-   "transport.csv.gz": 2911,
-   "water.csv.gz": 25758,
+   "comms.csv.gz": 11599037,
+   "fuel.csv.gz": 20276565,
+   "medical.csv.gz": 52422210,
+   "power.csv.gz": 31672623,
+   "scripture_public_domain.zip": 609154405,
+   "shelter.csv.gz": 38000757,
+   "supply.csv.gz": 46812575,
+   "survival.sqlite.gz": 757058235,
+   "transport.csv.gz": 7832514,
+   "water.csv.gz": 25562247,
    "world_overview.pmtiles": 45126822
   }
  },
@@ -30,10 +30,10 @@
   "release": "success"
  },
  "source": {
-  "file": "luxembourg-latest.osm.pbf",
-  "bytes": 56332034,
-  "planet_date": null,
-  "rehearsal": true
+  "file": "planet-261109.osm.pbf",
+  "bytes": 95827888806,
+  "planet_date": "2026-11-09",
+  "rehearsal": false
  },
  "notes": {
   "layers": {
@@ -46,31 +46,31 @@
    },
    "facts": {
     "cpus": "4",
-    "memory_kb": "16366640",
-    "mode": "rehearsal",
-    "source": "luxembourg-latest.osm.pbf",
-    "source_bytes": "56332034",
-    "disk_free_before": "124847898624",
-    "download_seconds": "3",
-    "checksum": "none published (rehearsal)",
-    "checksum_seconds": "0",
-    "filter_seconds": "2",
-    "filtered_bytes": "565579",
-    "build_seconds": "2",
-    "places": "42021",
-    "database_bytes": "11239424",
-    "pack_seconds": "1",
-    "survival_sqlite_gz_bytes": "3385180"
+    "memory_kb": "16366636",
+    "mode": "planet",
+    "source": "planet-261109.osm.pbf",
+    "source_bytes": "95827888806",
+    "disk_free_before": "124847931392",
+    "download_seconds": "901",
+    "checksum": "md5 verified",
+    "checksum_seconds": "230",
+    "filter_seconds": "2854",
+    "filtered_bytes": "887905766",
+    "build_seconds": "810",
+    "places": "9641722",
+    "database_bytes": "1810915328",
+    "pack_seconds": "151",
+    "survival_sqlite_gz_bytes": "757058235"
    },
    "log_tail": [
-    "-rw-r--r-- 1 runner runner 1024547 Nov 15 07:53 power.csv.gz",
-    "-rw-r--r-- 1 runner runner   35382 Nov 15 07:53 shelter.csv.gz",
-    "-rw-r--r-- 1 runner runner     103 Nov 15 07:53 source.json",
-    "-rw-r--r-- 1 runner runner    1709 Nov 15 07:53 stats.json",
-    "-rw-r--r-- 1 runner runner   13486 Nov 15 07:53 supply.csv.gz",
-    "-rw-r--r-- 1 runner runner 3385180 Nov 15 07:53 survival.sqlite.gz",
-    "-rw-r--r-- 1 runner runner    2911 Nov 15 07:53 transport.csv.gz",
-    "-rw-r--r-- 1 runner runner   25758 Nov 15 07:53 water.csv.gz"
+    "-rw-r--r-- 1 runner runner  31672623 Nov 15 09:18 power.csv.gz",
+    "-rw-r--r-- 1 runner runner  38000757 Nov 15 09:18 shelter.csv.gz",
+    "-rw-r--r-- 1 runner runner       111 Nov 15 09:19 source.json",
+    "-rw-r--r-- 1 runner runner      1923 Nov 15 09:17 stats.json",
+    "-rw-r--r-- 1 runner runner  46812575 Nov 15 09:18 supply.csv.gz",
+    "-rw-r--r-- 1 runner runner 757058235 Nov 15 09:19 survival.sqlite.gz",
+    "-rw-r--r-- 1 runner runner   7832514 Nov 15 09:18 transport.csv.gz",
+    "-rw-r--r-- 1 runner runner  25562247 Nov 15 09:17 water.csv.gz"
    ]
   },
   "map": {
@@ -80,17 +80,17 @@
     "upload": "success"
    },
    "facts": {
-    "map_seconds": "2",
+    "map_seconds": "3",
     "world_overview_bytes": "45126822"
    },
    "log_tail": [
     "",
-    "fetching chunks 100% |████████████████████████████| (43/43 MB, 75 MB/s)",
-    "2026/11/15 07:52:11 extract.go:606: Completed in 1.295874253s with 4 download threads (2622.939579966345 tiles/s).",
-    "2026/11/15 07:52:11 extract.go:611: Extract required 5 total requests.",
-    "2026/11/15 07:52:11 extract.go:612: Extract transferred 45 MB (overfetch 0.05) for an archive size of 45 MB",
+    "fetching chunks 100% |████████████████████████████| (43/43 MB, 79 MB/s)",
+    "2026/11/15 07:56:20 extract.go:606: Completed in 1.384998454s with 4 download threads (2454.154293109289 tiles/s).",
+    "2026/11/15 07:56:20 extract.go:611: Extract required 5 total requests.",
+    "2026/11/15 07:56:20 extract.go:612: Extract transferred 45 MB (overfetch 0.05) for an archive size of 45 MB",
     "wrote /home/runner/work/_temp/scratch/maps/world_overview.pmtiles (45.1 MB)",
-    "map_seconds=2",
+    "map_seconds=3",
     "world_overview_bytes=45126822"
    ]
   },
@@ -101,20 +101,20 @@
     "upload": "success"
    },
    "facts": {
-    "scripture_listed": "6",
-    "scripture_seconds": "5",
-    "scripture_translations": "6",
-    "scripture_zip_bytes": "9701518"
+    "scripture_listed": "112",
+    "scripture_seconds": "269",
+    "scripture_translations": "112",
+    "scripture_zip_bytes": "609154405"
    },
    "log_tail": [
-    "  get breBRG_html.zip (?)",
-    "  ok breBRG_html.zip (zip integrity)",
-    "  get breBRG_usfm.zip (?)",
-    "  ok breBRG_usfm.zip (zip integrity)",
-    "fetched 6, failed 0",
-    "scripture_seconds=5",
-    "scripture_translations=6",
-    "scripture_zip_bytes=9701518"
+    "  get wro_html.zip (?)",
+    "  ok wro_html.zip (zip integrity)",
+    "  get wro_usfm.zip (?)",
+    "  ok wro_usfm.zip (zip integrity)",
+    "fetched 112, failed 0",
+    "scripture_seconds=269",
+    "scripture_translations=112",
+    "scripture_zip_bytes=609154405"
    ]
   }
  }

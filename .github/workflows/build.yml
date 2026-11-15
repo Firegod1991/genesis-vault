@@ -13,9 +13,11 @@ on:
         description: Run id to take finished survival layers from (skips the planet build)
         required: false
         default: ""
+  # A build downloads the whole planet, so an edit to the workflow or the scripts does not start one.
+  # To start one from a commit, change .github/rebuild.
   push:
     branches: [main]
-    paths: [".github/workflows/build.yml", "scripts/**"]
+    paths: [".github/rebuild"]
 
 permissions:
   contents: write
@@ -264,8 +266,8 @@ jobs:
           # Written after every run, so a failed build is visible here and not only in the Actions log.
           # The monthly commit also keeps GitHub from pausing the schedule for lack of activity.
           python3 scripts/record.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Firegod1991"
+          git config user.email "193648396+Firegod1991@users.noreply.github.com"
           git add status.json
           if [ -f LATEST.md ]; then git add LATEST.md; fi
           if git diff --cached --quiet; then exit 0; fi

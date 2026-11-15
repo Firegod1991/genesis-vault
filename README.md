@@ -70,7 +70,8 @@ Every run, good or bad, writes what happened to [status.json](status.json): whic
 ### Changing the build
 
 * To change what the layers contain, change `poi_categories.json` in Genesis. Nothing here is edited by hand.
-* To try a change to the workflow quickly, set `REHEARSAL_URL` in build.yml to a small extract. The whole workflow then runs in minutes on that extract, publishes under the tag `rehearsal`, checks the files and removes that release again.
+* A build downloads the whole planet, so editing the workflow or the scripts does not start one. Start one from the Actions tab, or commit a change to `.github/rebuild`.
+* To try a change quickly, set `REHEARSAL_URL` in build.yml to a small extract and start a build. The whole workflow then runs in minutes on that extract, publishes under the tag `rehearsal`, checks the files and removes that release again.
 * To fix a later step without rebuilding the layers, start the workflow by hand and give it the id of the run whose layers to reuse.
 
 ## Read this before you rely on it

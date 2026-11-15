@@ -2,127 +2,232 @@ name: Monthly build
 
 # Builds the heavy data for Genesis and publishes it as a release:
 # survival layers for the whole world, the world overview map, public domain scripture.
-# Every run, good or bad, records what happened in status.json.
+# The work is in scripts/. Every run, good or bad, records what happened in status.json.
 
 on:
   schedule:
     - cron: "41 7 27 * *"   # 07:41 UTC on the 27th, ahead of the Genesis catalog refresh on the 1st
   workflow_dispatch:
+    inputs:
+      reuse_run:
+        description: Run id to take finished survival layers from (skips the planet build)
+        required: false
+        default: ""
   push:
     branches: [main]
-    paths: [".github/workflows/build.yml"]
+    paths: [".github/workflows/build.yml", "scripts/**"]
 
 permissions:
   contents: write
+  actions: read
 
 # A newer build replaces one that is still running.
 concurrency:
   group: build
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 env:
   GENESIS_REPO: https://github.com/Firegod1991/genesis
+  # Rehearsal: put a small OpenStreetMap extract between the first pair of quotes and the whole
+  # workflow runs in minutes, publishes under the tag "rehearsal" and removes that release again.
+  # Leave the quotes empty for the real planet build. The monthly schedule always builds the planet.
+  REHEARSAL_URL: ${{ github.event_name != 'schedule' && 'https://download.openstreetmap.fr/extracts/europe/luxembourg-latest.osm.pbf' || '' }}
+  # Run id to take finished survival layers from, so a fix to a later step need not rebuild them.
+  REUSE_RUN: ${{ github.event_name != 'schedule' && inputs.reuse_run || '' }}
 
 jobs:
   layers:
-    name: Survival layers (${{ matrix.region }})
+    name: Survival layers
     runs-on: ubuntu-latest
-    timeout-minutes: 340
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        region: [africa, antarctica, asia, australia-oceania, central-america, europe, north-america, south-america, russia]
+    timeout-minutes: 350
     env:
-      REGION: ${{ matrix.region }}
+      GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          path: vault
       - name: Free disk space and pick the roomiest disk
+        id: disk
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
-          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
           work="$RUNNER_TEMP/work"
           if [ -d /mnt ] && [ "$(df --output=avail /mnt | tail -1)" -gt "$(df --output=avail / | tail -1)" ]; then
             work=/mnt/genesis-work
           fi
           sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
-          mkdir -p "$RUNNER_TEMP/note"
-          echo "WORK=$work" >> "$GITHUB_ENV"
-          echo "GENESIS_VAULT=$work/vault" >> "$GITHUB_ENV"
-          df -h "$work"
-      - name: Get Genesis and osmium
+          mkdir -p "$work/out" "$RUNNER_TEMP/note"
+          {
+            echo "WORK=$work"
+            echo "OUT=$work/out"
+            echo "GENESIS=$GITHUB_WORKSPACE/genesis"
+            echo "GENESIS_VAULT=$work/vault"
+            echo "NOTE=$RUNNER_TEMP/note/facts"
+            echo "LOG=$RUNNER_TEMP/note/log"
+          } >> "$GITHUB_ENV"
+          df -h / /mnt 2> /dev/null || df -h /
+          echo "cpus=$(nproc)" >> "$RUNNER_TEMP/note/facts"
+          echo "memory_kb=$(awk '/MemTotal/ { print $2 }' /proc/meminfo)" >> "$RUNNER_TEMP/note/facts"
+      - name: Reuse the layers of an earlier run
+        id: reuse
+        if: env.REUSE_RUN != ''
+        continue-on-error: true
         run: |
-          git clone --depth 1 "$GENESIS_REPO" genesis
-          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
-      - name: Download the extract and check it
-        id: download
+          gh run download "$REUSE_RUN" --repo "$GITHUB_REPOSITORY" --name layers --dir "$OUT"
+          test -s "$OUT/survival.sqlite.gz"
+          test -s "$OUT/stats.json"
+          echo "found=yes" >> "$GITHUB_OUTPUT"
+          echo "reused_from_run=$REUSE_RUN" >> "$NOTE"
+      - name: Get Genesis and the tools
+        id: tools
+        if: steps.reuse.outputs.found != 'yes'
         run: |
-          url="https://download.geofabrik.de/$REGION-latest.osm.pbf"
-          curl -fL --retry 5 --retry-delay 20 --speed-limit 1024 --speed-time 120 -C - -sS -o "$WORK/region.osm.pbf" "$url"
-          want="$(curl -fsSL --retry 5 "$url.md5" | cut -d' ' -f1)"
-          have="$(md5sum "$WORK/region.osm.pbf" | cut -d' ' -f1)"
-          echo "extract_bytes=$(stat -c %s "$WORK/region.osm.pbf")" >> "$RUNNER_TEMP/note/facts"
-          [ "$want" = "$have" ] || { echo "MD5 mismatch: wanted $want, got $have"; exit 1; }
-      - name: Keep only the survival layers
-        id: filter
-        working-directory: genesis
-        run: |
-          # Filtering first lets the full extract go before the next steps need the space.
-          read -r -a rules <<< "$(python3 -c "from genesis import poi; print(' '.join(poi.filter_expressions()))")"
-          osmium tags-filter "$WORK/region.osm.pbf" "${rules[@]}" -o "$WORK/$REGION.osm.pbf" --overwrite
-          rm "$WORK/region.osm.pbf"
-          echo "filtered_bytes=$(stat -c %s "$WORK/$REGION.osm.pbf")" >> "$RUNNER_TEMP/note/facts"
-      - name: Build the database
+          git clone --depth 1 "$GENESIS_REPO" "$GENESIS"
+          sudo apt-get update -qq
+          # aria2 only makes the download faster. The build works without it.
+          sudo apt-get install -y -qq osmium-tool aria2 || sudo apt-get install -y -qq osmium-tool
+          osmium --version | head -1
+      - name: Build the layers
         id: build
-        working-directory: genesis
-        run: |
-          python3 -m genesis fetch --id global_power_plants
-          python3 -m genesis poi build --pbf "$WORK/$REGION.osm.pbf" --db "$WORK/out/$REGION.sqlite" --replace
-          places="$(python3 -m genesis poi stats --db "$WORK/out/$REGION.sqlite" | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")"
-          echo "places=$places" >> "$RUNNER_TEMP/note/facts"
-          echo "database_bytes=$(stat -c %s "$WORK/out/$REGION.sqlite")" >> "$RUNNER_TEMP/note/facts"
+        if: steps.reuse.outputs.found != 'yes'
+        run: bash vault/scripts/layers.sh 2>&1 | tee -a "$LOG"
       - uses: actions/upload-artifact@v7
         id: upload
         with:
-          name: layers-${{ matrix.region }}
-          path: ${{ env.WORK }}/out/${{ matrix.region }}.sqlite
-          retention-days: 3
+          name: layers
+          path: ${{ env.OUT }}
+          retention-days: 7
+          overwrite: true
+          compression-level: 0
           if-no-files-found: error
-      - name: Note how this continent went
+      - name: Note how it went
         if: always()
         env:
-          OUTCOMES: download=${{ steps.download.outcome }} filter=${{ steps.filter.outcome }} build=${{ steps.build.outcome }} upload=${{ steps.upload.outcome }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/note"
-          { echo "$OUTCOMES"; cat "$RUNNER_TEMP/note/facts" 2>/dev/null || true; echo "disk_free=$(df -h --output=avail "${WORK:-$RUNNER_TEMP}" | tail -1 | tr -d ' ')"; } | tr '\n' ' ' > "$RUNNER_TEMP/note/$REGION.txt"
+          OUTCOMES: disk=${{ steps.disk.outcome }} reuse=${{ steps.reuse.outcome }} tools=${{ steps.tools.outcome }} build=${{ steps.build.outcome }} upload=${{ steps.upload.outcome }}
+        run: python3 vault/scripts/note.py layers
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: note-${{ matrix.region }}
-          path: ${{ runner.temp }}/note/${{ matrix.region }}.txt
-          retention-days: 3
+          name: note-layers
+          path: ${{ runner.temp }}/note/layers.json
+          retention-days: 7
+          overwrite: true
+
+  map:
+    name: World overview map
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: vault
+      - name: Get Genesis
+        id: tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/note"
+          {
+            echo "OUT=$RUNNER_TEMP/out"
+            echo "GENESIS=$GITHUB_WORKSPACE/genesis"
+            echo "GENESIS_VAULT=$RUNNER_TEMP/scratch"
+            echo "NOTE=$RUNNER_TEMP/note/facts"
+            echo "LOG=$RUNNER_TEMP/note/log"
+          } >> "$GITHUB_ENV"
+          git clone --depth 1 "$GENESIS_REPO" "$GITHUB_WORKSPACE/genesis"
+      - name: Cut the map
+        id: build
+        run: bash vault/scripts/extras.sh map 2>&1 | tee -a "$LOG"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: map
+          path: ${{ env.OUT }}/world_overview.pmtiles
+          retention-days: 7
+          overwrite: true
+          compression-level: 0
+          if-no-files-found: error
+      - name: Note how it went
+        if: always()
+        env:
+          OUTCOMES: tools=${{ steps.tools.outcome }} build=${{ steps.build.outcome }} upload=${{ steps.upload.outcome }}
+        run: python3 vault/scripts/note.py map
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: note-map
+          path: ${{ runner.temp }}/note/map.json
+          retention-days: 7
+          overwrite: true
+
+  scripture:
+    name: Public domain scripture
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: vault
+      - name: Get Genesis
+        id: tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/note"
+          {
+            echo "OUT=$RUNNER_TEMP/out"
+            echo "GENESIS=$GITHUB_WORKSPACE/genesis"
+            echo "GENESIS_VAULT=$RUNNER_TEMP/scratch"
+            echo "NOTE=$RUNNER_TEMP/note/facts"
+            echo "LOG=$RUNNER_TEMP/note/log"
+          } >> "$GITHUB_ENV"
+          git clone --depth 1 "$GENESIS_REPO" "$GITHUB_WORKSPACE/genesis"
+      - name: Gather the translations
+        id: build
+        run: bash vault/scripts/extras.sh scripture 2>&1 | tee -a "$LOG"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: scripture
+          path: |
+            ${{ env.OUT }}/scripture_public_domain.zip
+            ${{ env.OUT }}/scripture_count.txt
+          retention-days: 7
+          overwrite: true
+          compression-level: 0
+          if-no-files-found: error
+      - name: Note how it went
+        if: always()
+        env:
+          OUTCOMES: tools=${{ steps.tools.outcome }} build=${{ steps.build.outcome }} upload=${{ steps.upload.outcome }}
+        run: python3 vault/scripts/note.py scripture
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: note-scripture
+          path: ${{ runner.temp }}/note/scripture.json
+          retention-days: 7
+          overwrite: true
 
   publish:
-    name: Merge and publish
-    needs: layers
+    name: Publish
+    needs: [layers, map, scripture]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      GITHUB_TOKEN: ${{ github.token }}
-      ALL_REGIONS: ${{ needs.layers.result }}
     steps:
-      - name: Free disk space
+      - uses: actions/checkout@v7
+        with:
+          path: vault
+      - name: Set folders
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
           mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/notes"
           echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
-          echo "GENESIS_VAULT=$RUNNER_TEMP/vault" >> "$GITHUB_ENV"
-          df -h "$RUNNER_TEMP"
-      - name: Get Genesis
-        run: git clone --depth 1 "$GENESIS_REPO" genesis
+      # A part that failed has no files to fetch. The release step decides what that means.
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
@@ -130,135 +235,43 @@ jobs:
           path: ${{ runner.temp }}/notes
           merge-multiple: true
       - uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
-          pattern: layers-*
-          path: ${{ runner.temp }}/parts
-          merge-multiple: true
-      - name: Merge the continents
-        id: merge
-        working-directory: genesis
-        run: |
-          shopt -s nullglob
-          sources=()
-          for f in "$RUNNER_TEMP"/parts/*.sqlite; do sources+=(--source "$f"); done
-          [ "${#sources[@]}" -gt 0 ] || { echo "No continent was built."; exit 1; }
-          python3 -m genesis poi merge --db "$OUT/survival.sqlite" "${sources[@]}"
-          python3 -m genesis poi stats --db "$OUT/survival.sqlite" > "$OUT/stats.json"
-          for f in "$RUNNER_TEMP"/parts/*.sqlite; do basename "$f" .sqlite; done | sort > "$OUT/regions.txt"
-          rm -rf "$RUNNER_TEMP/parts"
-          cat "$OUT/stats.json"
-      - name: Tables for each layer
-        id: tables
-        working-directory: genesis
-        run: |
-          for layer in $(python3 -c "from genesis import poi; print(' '.join(poi.categories()))"); do
-            python3 -m genesis poi export --db "$OUT/survival.sqlite" --format csv --cat "$layer" --out "$OUT/$layer.csv"
-            gzip -9 "$OUT/$layer.csv"
-          done
-          gzip -6 "$OUT/survival.sqlite"
-          ls -l "$OUT"
-      # The map and the scripture bundle are extras: if one fails, the layers are still published.
-      - name: World overview map
-        id: map
+          name: layers
+          path: ${{ runner.temp }}/out
+      - uses: actions/download-artifact@v8
         continue-on-error: true
-        working-directory: genesis
-        run: |
-          python3 -m genesis maps world --maxzoom 6
-          mv "$GENESIS_VAULT/maps/world_overview.pmtiles" "$OUT/"
-      - name: Public domain scripture
-        id: scripture
+        with:
+          name: map
+          path: ${{ runner.temp }}/out
+      - uses: actions/download-artifact@v8
         continue-on-error: true
-        working-directory: genesis
-        run: |
-          read -r -a ids <<< "$(python3 -c "
-          import json
-          lock = json.load(open('catalog/lock/scripture.json'))['items']
-          print(' '.join('--id ' + k for k, e in sorted(lock.items()) if e.get('license') == 'Public domain' and e.get('files')))
-          ")"
-          # One translation that will not download must not sink the whole bundle.
-          python3 -m genesis fetch "${ids[@]}" --keep-going || true
-          count="$(find "$GENESIS_VAULT/scripture" -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          [ "$count" -gt 50 ] || { echo "Only $count translations arrived."; exit 1; }
-          (cd "$GENESIS_VAULT/scripture" && zip -q -r "$OUT/scripture_public_domain.zip" .)
-          echo "$count" > "$OUT/scripture_count.txt"
+        with:
+          name: scripture
+          path: ${{ runner.temp }}/out
       - name: Publish the release
         id: release
-        working-directory: ${{ runner.temp }}/out
-        run: |
-          tag="$(date -u +%Y.%m)"
-          title="Genesis vault $(date -u +'%B %Y')"
-          files=()
-          for f in survival.sqlite.gz world_overview.pmtiles scripture_public_domain.zip ./*.csv.gz; do
-            [ -s "$f" ] || continue
-            [ "$(stat -c %s "$f")" -lt 2000000000 ] || { echo "$f is over the 2 GB release file limit."; exit 1; }
-            files+=("$f")
-          done
-          [ -s survival.sqlite.gz ] || { echo "There are no survival layers to publish."; exit 1; }
-          whole=yes
-          [ "$ALL_REGIONS" = "success" ] && [ -s world_overview.pmtiles ] && [ -s scripture_public_domain.zip ] || whole=no
-          sha256sum "${files[@]}" | sed 's|  \./|  |' > SHA256SUMS
-          WHOLE="$whole" python3 - > notes.md <<'EOF'
-          import datetime, json, os
-          stats = json.load(open("stats.json"))
-          regions = open("regions.txt").read().split()
-          print("Built %s from OpenStreetMap, continent by continent.\n" % datetime.date.today().isoformat())
-          if os.environ["WHOLE"] != "yes":
-              missing = [n for n in ("world_overview.pmtiles", "scripture_public_domain.zip") if not os.path.exists(n)]
-              print("**This build is incomplete.** Continents included: %s.%s\n"
-                    % (", ".join(regions), " Not built this time: %s." % ", ".join(missing) if missing else ""))
-          print("| Layer | Places |\n|---|---|")
-          for name, c in stats["categories"].items():
-              print("| %s | %s |" % (name, format(c["total"], ",")))
-          print("| **All** | **%s** |\n" % format(stats["total"], ","))
-          if os.path.exists("scripture_count.txt"):
-              print("%s public domain Bible translations in `scripture_public_domain.zip`.\n" % open("scripture_count.txt").read().strip())
-          print("Use it with Genesis: `genesis fetch --id survival_layers_world --id world_overview`\n")
-          print("Map data and survival layers: © OpenStreetMap contributors, Open Database License. "
-                "Power plants: World Resources Institute Global Power Plant Database, CC BY 4.0. "
-                "Scripture: public domain texts from eBible.org.")
-          EOF
-          cat notes.md
-          # An incomplete build is published as a preview, so the last complete one stays the latest.
-          if [ "$whole" = "yes" ]; then kind=(--prerelease=false --latest); else kind=(--prerelease); fi
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "${files[@]}" SHA256SUMS --clobber
-            gh release edit "$tag" --title "$title" --notes-file notes.md "${kind[@]}"
-          else
-            gh release create "$tag" "${files[@]}" SHA256SUMS --title "$title" --notes-file notes.md "${kind[@]}"
-          fi
-      - uses: actions/checkout@v7
-        if: always()
-        with:
-          path: vault
+        run: bash vault/scripts/release.sh 2>&1 | tee -a "$RUNNER_TEMP/notes/publish.log"
       - name: Record the build in the repository
         if: always()
         working-directory: vault
         env:
-          OUTCOMES: merge=${{ steps.merge.outcome }} tables=${{ steps.tables.outcome }} map=${{ steps.map.outcome }} scripture=${{ steps.scripture.outcome }} release=${{ steps.release.outcome }}
+          OUTCOMES: release=${{ steps.release.outcome }}
+          NEEDS: layers=${{ needs.layers.result }} map=${{ needs.map.result }} scripture=${{ needs.scripture.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # Written after every run, so a failed build is visible here and not only in the Actions log.
           # The monthly commit also keeps GitHub from pausing the schedule for lack of activity.
-          python3 - <<'EOF'
-          import datetime, glob, json, os
-          temp = os.environ["RUNNER_TEMP"]
-          steps = dict(pair.split("=", 1) for pair in os.environ["OUTCOMES"].split())
-          continents = {os.path.basename(p)[:-4]: open(p).read().split() for p in sorted(glob.glob(temp + "/notes/*.txt"))}
-          status = {"finished": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-                    "run": os.environ["RUN_URL"], "continents_job": os.environ["ALL_REGIONS"],
-                    "published": steps.get("release") == "success", "steps": steps, "continents": continents}
-          with open("status.json", "w") as f:
-              json.dump(status, f, indent=1)
-              f.write("\n")
-          if status["published"]:
-              with open("LATEST.md", "w") as f:
-                  f.write("# Latest build\n\n" + open(temp + "/out/notes.md").read()
-                          + "\nChecksums:\n\n```\n" + open(temp + "/out/SHA256SUMS").read() + "```\n")
-          EOF
-          cat status.json
+          python3 scripts/record.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add status.json
+          if [ -f LATEST.md ]; then git add LATEST.md; fi
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "build: $(date -u +%Y.%m) recorded"
-          git push
+          if [ -n "$REHEARSAL_URL" ]; then git commit -q -m "build: rehearsal recorded"; else git commit -q -m "build: $(date -u +%Y.%m) recorded"; fi
+          # Another commit may have landed while the build ran: rebase and try again.
+          for _ in 1 2 3; do
+            git pull -q --rebase && git push -q && exit 0
+            sleep 10
+          done
+          exit 1

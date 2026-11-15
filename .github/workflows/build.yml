@@ -32,10 +32,11 @@ defaults:
 
 env:
   GENESIS_REPO: https://github.com/Firegod1991/genesis
-  # Rehearsal: put a small OpenStreetMap extract between the first pair of quotes and the whole
+  # Rehearsal: put a small OpenStreetMap extract between the first pair of quotes, for example
+  # https://download.openstreetmap.fr/extracts/europe/luxembourg-latest.osm.pbf and the whole
   # workflow runs in minutes, publishes under the tag "rehearsal" and removes that release again.
   # Leave the quotes empty for the real planet build. The monthly schedule always builds the planet.
-  REHEARSAL_URL: ${{ github.event_name != 'schedule' && 'https://download.openstreetmap.fr/extracts/europe/luxembourg-latest.osm.pbf' || '' }}
+  REHEARSAL_URL: ${{ github.event_name != 'schedule' && '' || '' }}
   # Run id to take finished survival layers from, so a fix to a later step need not rebuild them.
   REUSE_RUN: ${{ github.event_name != 'schedule' && inputs.reuse_run || '' }}
 

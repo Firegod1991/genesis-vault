@@ -90,14 +90,14 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       GITHUB_TOKEN: ${{ github.token }}
-      GENESIS_VAULT: ${{ runner.temp }}/vault
-      OUT: ${{ runner.temp }}/out
       ALL_REGIONS: ${{ needs.layers.result }}
     steps:
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
-          mkdir -p "$OUT"
+          mkdir -p "$RUNNER_TEMP/out"
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
+          echo "GENESIS_VAULT=$RUNNER_TEMP/vault" >> "$GITHUB_ENV"
           df -h "$RUNNER_TEMP"
       - name: Get Genesis
         run: git clone --depth 1 "$GENESIS_REPO" genesis
@@ -115,7 +115,7 @@ jobs:
           [ "${#sources[@]}" -gt 0 ] || { echo "No continent was built."; exit 1; }
           python3 -m genesis poi merge --db "$OUT/survival.sqlite" "${sources[@]}"
           python3 -m genesis poi stats --db "$OUT/survival.sqlite" > "$OUT/stats.json"
-          ls "$RUNNER_TEMP"/parts | sed 's/\.sqlite$//' | sort > "$OUT/regions.txt"
+          for f in "$RUNNER_TEMP"/parts/*.sqlite; do basename "$f" .sqlite; done | sort > "$OUT/regions.txt"
           rm -rf "$RUNNER_TEMP/parts"
           cat "$OUT/stats.json"
       - name: Tables for each layer
@@ -135,13 +135,13 @@ jobs:
       - name: Public domain scripture
         working-directory: genesis
         run: |
-          ids="$(python3 -c "
+          read -r -a ids <<< "$(python3 -c "
           import json
           lock = json.load(open('catalog/lock/scripture.json'))['items']
           print(' '.join('--id ' + k for k, e in sorted(lock.items()) if e.get('license') == 'Public domain' and e.get('files')))
           ")"
           # One translation that will not download must not sink the whole release.
-          python3 -m genesis fetch $ids --keep-going || true
+          python3 -m genesis fetch "${ids[@]}" --keep-going || true
           count="$(find "$GENESIS_VAULT/scripture" -mindepth 1 -maxdepth 1 -type d | wc -l)"
           echo "$count" > "$OUT/scripture_count.txt"
           [ "$count" -gt 50 ] || { echo "Only $count translations arrived."; exit 1; }
